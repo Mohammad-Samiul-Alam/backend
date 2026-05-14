@@ -5,14 +5,25 @@ const bookSchema = new mongoose.Schema(
     title: {
       type: String,
       required: true,
+      trim: true,
     },
     caption: {
       type: String,
       required: true,
+      trim: true,
     },
     image: {
       type: String,
       required: true,
+      validate: {
+        validator: (v) => /^https?:\/\/.+/.test(v),
+        message: "Image must be a valid URL",
+      },
+    },
+    publicId: {
+      type: String,
+      required: true,
+      comment: "Cloudinary public_id for image deletion",
     },
     rating: {
       type: Number,
@@ -24,6 +35,7 @@ const bookSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
+      index: true, // improves queries for user's books
     },
   },
   { timestamps: true }

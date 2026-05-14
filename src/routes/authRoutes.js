@@ -1,43 +1,77 @@
+import express from "express";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import bcrypt from "bcryptjs";
 
-const protectRoute = async (req, res, next) => {
+const router = express.Router();
+
+// Register
+router.post("/register", async (req, res) => {
   try {
-    // get authorization header
-    const authHeader = req.header("Authorization");
+    const { username, email, password } = req.body;
 
-    // check if header exists
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({
-        message: "No authentication token, access denied",
-      });
+    // Check if user exists
+    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+    if (existingUser) {
+      return res.status(400).json({ message: "User already exists" });
     }
 
-    // extract token
-    const token = authHeader.replace("Bearer ", "");
+    // Create new user
+    const user = new User({ username, email, password });
+    await user.save();
 
-    // verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    // find user
-    const user = await User.findById(decoded.userId).select("-password");
-
-    if (!user) {
-      return res.status(401).json({
-        message: "Token is not valid",
-      });
-    }
-
-    req.user = user;
-
-    next();
-  } catch (error) {
-    console.error("Authentication error:", error.message);
-
-    res.status(401).json({
-      message: "Token is not valid",
+    // Generate token
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
+      expiresIn: "7d",
     });
-  }
-};
 
-export default protectRoute;
+    res.status(201).json({
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        profileImage: user.profileImage,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Login
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
+      expiresIn: "7d",
+    });
+
+    res.json({
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        profileImage: user.profileImage,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+export default router;
