@@ -10,7 +10,7 @@ router.post("/", protectRoute, async (req, res) => {
   try {
     const { title, caption, rating, image } = req.body;
 
-    // Validate required fields (allow rating = 0? Typically rating 1-5)
+    // Validate required fields
     if (!title || !caption || rating === undefined || !image) {
       return res.status(400).json({ message: "Please provide title, caption, rating, and image" });
     }
@@ -24,7 +24,7 @@ router.post("/", protectRoute, async (req, res) => {
     let uploadResponse;
     try {
       uploadResponse = await cloudinary.uploader.upload(image, {
-        folder: "bookworm", // optional: organize images
+        folder: "bookworm",
       });
     } catch (uploadError) {
       console.error("Cloudinary upload error:", uploadError);
@@ -32,7 +32,7 @@ router.post("/", protectRoute, async (req, res) => {
     }
 
     const imageUrl = uploadResponse.secure_url;
-    const publicId = uploadResponse.public_id; // store for later deletion
+    const publicId = uploadResponse.public_id;
 
     // Save to database
     const newBook = new Book({
@@ -40,7 +40,7 @@ router.post("/", protectRoute, async (req, res) => {
       caption,
       rating: numRating,
       image: imageUrl,
-      publicId,          // <-- add this field to your Book schema
+      publicId,          // Must exist in Book schema
       user: req.user._id,
     });
 
@@ -56,7 +56,7 @@ router.post("/", protectRoute, async (req, res) => {
 router.get("/", protectRoute, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 5; // changed default to 5
+    const limit = parseInt(req.query.limit) || 5;
     const skip = (page - 1) * limit;
 
     const books = await Book.find()
@@ -79,12 +79,12 @@ router.get("/", protectRoute, async (req, res) => {
   }
 });
 
-// GET /api/books/user - Recommended books of the logged-in user
+// GET /api/books/user - Books of the logged-in user
 router.get("/user", protectRoute, async (req, res) => {
   try {
     const books = await Book.find({ user: req.user._id })
       .sort({ createdAt: -1 })
-      .populate("user", "username profileImage"); // for consistency
+      .populate("user", "username profileImage");
     res.json(books);
   } catch (error) {
     console.error("Get user books error:", error.message);
@@ -110,10 +110,9 @@ router.delete("/:id", protectRoute, async (req, res) => {
         console.log(`Deleted Cloudinary image: ${book.publicId}`);
       } catch (deleteError) {
         console.error("Error deleting image from Cloudinary:", deleteError);
-        // Continue to delete the book record anyway
       }
     } else if (book.image && book.image.includes("cloudinary")) {
-      // Fallback for old books without publicId (remove after migration)
+      // Fallback for old books without publicId
       const publicId = book.image.split("/").pop().split(".")[0];
       await cloudinary.uploader.destroy(publicId);
     }
