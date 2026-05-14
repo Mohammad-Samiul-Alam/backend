@@ -5,14 +5,23 @@ import protectRoute from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
-// POST /api/books - Create a new book
+// Helper: Check if string is a valid base64 image
+const isValidBase64Image = (str) => {
+  return /^data:image\/(jpeg|png|jpg|gif|webp);base64,/.test(str);
+};
+
+// POST /api/books
 router.post("/", protectRoute, async (req, res) => {
   try {
     const { title, caption, rating, image } = req.body;
 
-    // Validate required fields
     if (!title || !caption || rating === undefined || !image) {
       return res.status(400).json({ message: "Please provide title, caption, rating, and image" });
+    }
+
+    // Validate base64 image format
+    if (!isValidBase64Image(image)) {
+      return res.status(400).json({ message: "Invalid image format. Must be a base64 data URL (jpeg/png/jpg/gif/webp)." });
     }
 
     const numRating = Number(rating);
@@ -20,7 +29,6 @@ router.post("/", protectRoute, async (req, res) => {
       return res.status(400).json({ message: "Rating must be a number between 1 and 5" });
     }
 
-    // Upload image to Cloudinary
     let uploadResponse;
     try {
       uploadResponse = await cloudinary.uploader.upload(image, {
@@ -31,16 +39,12 @@ router.post("/", protectRoute, async (req, res) => {
       return res.status(400).json({ message: "Failed to upload image. Please check the image format or size." });
     }
 
-    const imageUrl = uploadResponse.secure_url;
-    const publicId = uploadResponse.public_id;
-
-    // Save to database
     const newBook = new Book({
       title,
       caption,
       rating: numRating,
-      image: imageUrl,
-      publicId,          // Must exist in Book schema
+      image: uploadResponse.secure_url,
+      publicId: uploadResponse.public_id,
       user: req.user._id,
     });
 
@@ -52,7 +56,7 @@ router.post("/", protectRoute, async (req, res) => {
   }
 });
 
-// GET /api/books?page=1&limit=5 - Paginated books (feed)
+// GET /api/books (paginated)
 router.get("/", protectRoute, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -79,7 +83,7 @@ router.get("/", protectRoute, async (req, res) => {
   }
 });
 
-// GET /api/books/user - Books of the logged-in user
+// GET /api/books/user
 router.get("/user", protectRoute, async (req, res) => {
   try {
     const books = await Book.find({ user: req.user._id })
@@ -92,29 +96,27 @@ router.get("/user", protectRoute, async (req, res) => {
   }
 });
 
-// DELETE /api/books/:id - Delete a book
+// DELETE /api/books/:id (fixed)
 router.delete("/:id", protectRoute, async (req, res) => {
   try {
     const book = await Book.findById(req.params.id);
     if (!book) return res.status(404).json({ message: "Book not found" });
 
-    // Authorization check
     if (book.user.toString() !== req.user._id.toString()) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    // Delete image from Cloudinary using stored publicId
+    // Delete from Cloudinary using the stored publicId (safe and reliable)
     if (book.publicId) {
       try {
         await cloudinary.uploader.destroy(book.publicId);
         console.log(`Deleted Cloudinary image: ${book.publicId}`);
       } catch (deleteError) {
         console.error("Error deleting image from Cloudinary:", deleteError);
+        // Still proceed to delete the book record
       }
-    } else if (book.image && book.image.includes("cloudinary")) {
-      // Fallback for old books without publicId
-      const publicId = book.image.split("/").pop().split(".")[0];
-      await cloudinary.uploader.destroy(publicId);
+    } else {
+      console.warn(`Book ${book._id} has no publicId, skipping Cloudinary deletion.`);
     }
 
     await book.deleteOne();

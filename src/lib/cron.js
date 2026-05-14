@@ -1,8 +1,8 @@
-import cron from "cron";
+import { CronJob } from "cron";
 import https from "https";
 import http from "http";
 
-const job = new cron.CronJob("*/14 * * * *", function () {
+const job = new CronJob("*/14 * * * *", function () {
   const apiUrl = process.env.API_URL;
   if (!apiUrl) {
     console.error("API_URL is not defined in environment variables");
@@ -13,7 +13,6 @@ const job = new cron.CronJob("*/14 * * * *", function () {
 
   client
     .get(apiUrl, (res) => {
-      // Consume response data to free up memory
       res.on("data", () => {});
       res.on("end", () => {
         if (res.statusCode === 200) {
